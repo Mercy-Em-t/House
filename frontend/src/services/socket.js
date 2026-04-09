@@ -42,9 +42,9 @@ export function disconnect() {
   }
 }
 
-/** Emit avatar movement. Payload: { x, y, z?, direction? } */
-export function emitMove(x, y, z = 0, direction = 'down') {
-  if (socket) socket.emit('avatar:move', { x, y, z, direction });
+/** Emit movement intent. */
+export function emitIntent(intent) {
+  if (socket) socket.emit('avatar:intent', intent);
 }
 
 /** Tell the server the avatar has stopped moving. */
@@ -60,4 +60,9 @@ export function emitChat(content, type = 'room', recipientId = null) {
 /** Request room chat history. */
 export function requestHistory(roomId) {
   if (socket) socket.emit('room:history', { roomId });
+}
+
+/** Explicitly join a room channel. */
+export function emitJoinRoom(roomId) {
+  if (socket) socket.emit('room:join', { roomId });
 }

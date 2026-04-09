@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { connect, disconnect, emitMove, emitIdle, emitChat, requestHistory } from '../../services/socket';
-import { getToken } from '../../services/auth';
+import { connect, disconnect, emitIntent, emitIdle, emitChat, requestHistory, emitJoinRoom } from '../../services/socket';
 import WorldCanvas from './WorldCanvas.jsx';
 import ChatPanel from '../Chat/ChatPanel.jsx';
 import HUD from '../HUD/HUD.jsx';
@@ -77,6 +76,26 @@ export default function WorldView({ user, onLogout }) {
       });
     });
 
+    socket.on('world:snapshot', ({ avatars: snapshotAvatars }) => {
+      if (!Array.isArray(snapshotAvatars)) return;
+      setAvatars((prev) => {
+        const next = { ...prev };
+        for (const avatar of snapshotAvatars) {
+          next[avatar.id] = avatar;
+          if (avatar.id === myIdRef.current) {
+            setWorld((currentWorld) => {
+              if (currentWorld) {
+                const room = currentWorld.rooms.find((r) => r.id === avatar.roomId);
+                setCurrentRoom(room || null);
+              }
+              return currentWorld;
+            });
+          }
+        }
+        return next;
+      });
+    });
+
     socket.on('avatar:left', ({ userId }) => {
       setAvatars((prev) => {
         const next = { ...prev };
@@ -100,6 +119,7 @@ export default function WorldView({ user, onLogout }) {
       socket.off('world:init');
       socket.off('avatar:joined');
       socket.off('avatar:update');
+      socket.off('world:snapshot');
       socket.off('avatar:left');
       socket.off('chat:message');
       socket.off('chat:history');
@@ -115,8 +135,8 @@ export default function WorldView({ user, onLogout }) {
     }
   }, [currentRoomId]);
 
-  function handleAvatarMove(x, y, direction) {
-    emitMove(x, y, 0, direction);
+  function handleAvatarIntent(intent) {
+    emitIntent(intent);
   }
 
   function handleAvatarIdle() {
@@ -131,6 +151,10 @@ export default function WorldView({ user, onLogout }) {
   function handleLogout() {
     disconnect();
     onLogout();
+  }
+
+  function handleJoinRoom() {
+    if (currentRoom?.id) emitJoinRoom(currentRoom.id);
   }
 
   if (!connected || !world) {
@@ -156,6 +180,7 @@ export default function WorldView({ user, onLogout }) {
         nearbyCount={nearbyIds.length}
         chatMode={chatMode}
         onChatModeChange={setChatMode}
+        onJoinRoom={handleJoinRoom}
         onLogout={handleLogout}
         connected={connected}
       />
@@ -166,7 +191,7 @@ export default function WorldView({ user, onLogout }) {
           avatars={Object.values(avatars)}
           myUserId={myIdRef.current}
           nearbyIds={nearbyIds}
-          onMove={handleAvatarMove}
+          onIntent={handleAvatarIntent}
           onIdle={handleAvatarIdle}
         />
 

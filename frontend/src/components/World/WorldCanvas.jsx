@@ -1,26 +1,8 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import config from '../../config.js';
 
-/**
- * WorldCanvas
- *
- * Renders the virtual world using an HTML5 Canvas element.
- *
- * Architecture notes for future 3D/Unity upgrade:
- * ─────────────────────────────────────────────────
- * - All positions are stored in "world units" (wu). The canvas scales them.
- * - The renderer is intentionally separated from movement logic so it can be
- *   replaced with a Three.js / Babylon.js / Unity WebGL renderer without
- *   changing the Socket.io layer or the WorldView state management.
- * - Avatar direction maps to ['up','down','left','right'] which will translate
- *   to Y-axis rotation in 3D mode.
- */
-
 const AVATAR_RADIUS = config.avatar.size / 2;
-const MOVE_SPEED = config.avatar.speed;
 const ROOM_LABEL_FONT = '13px sans-serif';
-
-// Room type → display emoji
 const ROOM_ICONS = {
   lobby: '🏛️',
   office: '💼',
@@ -29,42 +11,70 @@ const ROOM_ICONS = {
   'ai-hub': '🤖',
 };
 
-export default function WorldCanvas({
-  world,
-  avatars,
-  myUserId,
-  nearbyIds,
-  onMove,
-  onIdle,
-}) {
+export default function WorldCanvas({ world, avatars, myUserId, nearbyIds, onIntent, onIdle }) {
   const canvasRef = useRef(null);
-  const keysRef = useRef(new Set());
-  const myPosRef = useRef(null);       // { x, y } — driven by server state
   const animRef = useRef(null);
-  const movingRef = useRef(false);
-  const cameraRef = useRef({ x: 0, y: 0 }); // top-left of viewport in world units
+  const keysRef = useRef(new Set());
+  const steerActiveRef = useRef(false);
+  const pointerRef = useRef({ x: 0, y: 0, panning: false, lastX: 0, lastY: 0 });
+  const cameraRef = useRef({ x: 0, y: 0 });
+  const renderAvatarsRef = useRef({});
+  const seqRef = useRef(0);
+  const [controlMode, setControlMode] = useState('steer'); // steer | tap | grid
+  const [cameraMode, setCameraMode] = useState('lookAhead'); // center | lookAhead
+  const [freeLook, setFreeLook] = useState(false);
 
-  // ── Sync local position from server state ──────────────────────────────────
-  useEffect(() => {
-    const me = avatars.find((a) => a.id === myUserId);
-    if (me && !myPosRef.current) {
-      myPosRef.current = { x: me.x, y: me.y };
-    }
-  }, [avatars, myUserId]);
+  const emitIntent = useCallback((intent) => {
+    onIntent({
+      sequence: ++seqRef.current,
+      clientTime: Date.now(),
+      speed: config.avatar.speed * 55,
+      ...intent,
+    });
+  }, [onIntent]);
 
-  // ── Keyboard input ─────────────────────────────────────────────────────────
+  const getMyAvatar = useCallback(() => avatars.find((a) => a.id === myUserId) || null, [avatars, myUserId]);
+
+  const getWorldPointer = useCallback((event) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left + cameraRef.current.x,
+      y: event.clientY - rect.top + cameraRef.current.y,
+    };
+  }, []);
+
+  const sendSteerIntent = useCallback((target) => {
+    const me = getMyAvatar();
+    if (!me) return;
+    const dx = target.x - me.x;
+    const dy = target.y - me.y;
+    const mag = Math.hypot(dx, dy) || 1;
+    emitIntent({
+      mode: 'steer',
+      active: true,
+      direction: { x: dx / mag, y: dy / mag },
+    });
+  }, [emitIntent, getMyAvatar]);
+
   useEffect(() => {
     function onKeyDown(e) {
-      const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'];
-      if (keys.includes(e.key)) {
+      const key = e.key.toLowerCase();
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'].includes(key)) {
         e.preventDefault();
-        keysRef.current.add(e.key);
+        keysRef.current.add(key);
       }
+      if (key === '1') setControlMode('steer');
+      if (key === '2') setControlMode('tap');
+      if (key === '3') setControlMode('grid');
+      if (key === 'c') setCameraMode('center');
+      if (key === 'l') setCameraMode('lookAhead');
+      if (key === 'f') setFreeLook((v) => !v);
     }
     function onKeyUp(e) {
-      keysRef.current.delete(e.key);
+      keysRef.current.delete(e.key.toLowerCase());
     }
-
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     return () => {
@@ -73,55 +83,146 @@ export default function WorldCanvas({
     };
   }, []);
 
-  // ── Game loop ──────────────────────────────────────────────────────────────
+  const onPointerDown = useCallback((event) => {
+    const point = getWorldPointer(event);
+    pointerRef.current.x = point.x;
+    pointerRef.current.y = point.y;
+    pointerRef.current.lastX = event.clientX;
+    pointerRef.current.lastY = event.clientY;
+
+    if (freeLook && event.button !== 0) {
+      pointerRef.current.panning = true;
+      return;
+    }
+
+    if (controlMode === 'steer') {
+      steerActiveRef.current = true;
+      sendSteerIntent(point);
+      return;
+    }
+
+    const me = getMyAvatar();
+    if (!me) return;
+    const dx = point.x - me.x;
+    const dy = point.y - me.y;
+    const mag = Math.hypot(dx, dy) || 1;
+
+    if (controlMode === 'tap') {
+      emitIntent({
+        mode: 'tap',
+        active: true,
+        direction: { x: dx / mag, y: dy / mag },
+        target: point,
+      });
+      return;
+    }
+
+    if (controlMode === 'grid') {
+      const axis = Math.abs(dx) > Math.abs(dy) ? { x: Math.sign(dx), y: 0 } : { x: 0, y: Math.sign(dy) };
+      emitIntent({
+        mode: 'grid',
+        active: true,
+        direction: axis,
+      });
+    }
+  }, [controlMode, emitIntent, freeLook, getMyAvatar, getWorldPointer, sendSteerIntent]);
+
+  const onPointerMove = useCallback((event) => {
+    const point = getWorldPointer(event);
+    pointerRef.current.x = point.x;
+    pointerRef.current.y = point.y;
+
+    if (pointerRef.current.panning) {
+      const dx = event.clientX - pointerRef.current.lastX;
+      const dy = event.clientY - pointerRef.current.lastY;
+      pointerRef.current.lastX = event.clientX;
+      pointerRef.current.lastY = event.clientY;
+      cameraRef.current.x = clamp(cameraRef.current.x - dx, 0, world.bounds.width - canvasRef.current.width);
+      cameraRef.current.y = clamp(cameraRef.current.y - dy, 0, world.bounds.height - canvasRef.current.height);
+      return;
+    }
+
+    if (steerActiveRef.current && controlMode === 'steer') {
+      sendSteerIntent(point);
+    }
+  }, [controlMode, getWorldPointer, sendSteerIntent, world.bounds.height, world.bounds.width]);
+
+  const onPointerUp = useCallback(() => {
+    pointerRef.current.panning = false;
+    if (!steerActiveRef.current) return;
+    steerActiveRef.current = false;
+    emitIntent({ mode: 'steer', active: false });
+    onIdle();
+  }, [emitIntent, onIdle]);
+
   const gameLoop = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !world || !myPosRef.current) {
+    const me = getMyAvatar();
+    if (!canvas || !world || !me) {
       animRef.current = requestAnimationFrame(gameLoop);
       return;
     }
 
+    // keyboard directional steering for simulation/testing
     const keys = keysRef.current;
-    let { x, y } = myPosRef.current;
-    let moved = false;
-    let direction = 'down';
-
-    if (keys.has('ArrowUp') || keys.has('w')) { y -= MOVE_SPEED; direction = 'up'; moved = true; }
-    if (keys.has('ArrowDown') || keys.has('s')) { y += MOVE_SPEED; direction = 'down'; moved = true; }
-    if (keys.has('ArrowLeft') || keys.has('a')) { x -= MOVE_SPEED; direction = 'left'; moved = true; }
-    if (keys.has('ArrowRight') || keys.has('d')) { x += MOVE_SPEED; direction = 'right'; moved = true; }
-
-    // Clamp to world bounds
-    x = Math.max(AVATAR_RADIUS, Math.min(world.bounds.width - AVATAR_RADIUS, x));
-    y = Math.max(AVATAR_RADIUS, Math.min(world.bounds.height - AVATAR_RADIUS, y));
-
-    if (moved) {
-      myPosRef.current = { x, y };
-      onMove(x, y, direction);
-      movingRef.current = true;
-    } else if (movingRef.current) {
-      movingRef.current = false;
-      onIdle();
+    const dir = {
+      x: (keys.has('arrowright') || keys.has('d') ? 1 : 0) + (keys.has('arrowleft') || keys.has('a') ? -1 : 0),
+      y: (keys.has('arrowdown') || keys.has('s') ? 1 : 0) + (keys.has('arrowup') || keys.has('w') ? -1 : 0),
+    };
+    if (controlMode === 'steer') {
+      if (dir.x || dir.y) {
+        const mag = Math.hypot(dir.x, dir.y);
+        emitIntent({ mode: 'steer', active: true, direction: { x: dir.x / mag, y: dir.y / mag } });
+      } else if (!steerActiveRef.current) {
+        emitIntent({ mode: 'steer', active: false });
+      }
     }
 
-    // Camera: keep my avatar centred
-    const vw = canvas.width;
-    const vh = canvas.height;
-    cameraRef.current = {
-      x: Math.max(0, Math.min(world.bounds.width - vw, x - vw / 2)),
-      y: Math.max(0, Math.min(world.bounds.height - vh, y - vh / 2)),
-    };
+    // smooth camera follow with optional look-ahead offset
+    if (!pointerRef.current.panning) {
+      const look = cameraMode === 'lookAhead' ? 32 : 0;
+      const lookX = me.direction === 'right' ? look : me.direction === 'left' ? -look : 0;
+      const lookY = me.direction === 'down' ? look : me.direction === 'up' ? -look : 0;
+      const targetX = clamp(me.x - canvas.width / 2 + lookX, 0, world.bounds.width - canvas.width);
+      const targetY = clamp(me.y - canvas.height / 2 + lookY, 0, world.bounds.height - canvas.height);
+      if (!freeLook) {
+        cameraRef.current.x = lerp(cameraRef.current.x, targetX, 0.16);
+        cameraRef.current.y = lerp(cameraRef.current.y, targetY, 0.16);
+      }
+    }
 
-    render(canvas, world, avatars, myUserId, nearbyIds, cameraRef.current);
+    // client interpolation for smooth snapshots
+    const nextRenderAvatars = { ...renderAvatarsRef.current };
+    for (const avatar of avatars) {
+      const cur = nextRenderAvatars[avatar.id] || { ...avatar };
+      cur.x = lerp(cur.x, avatar.x, 0.25);
+      cur.y = lerp(cur.y, avatar.y, 0.25);
+      cur.direction = avatar.direction;
+      cur.state = avatar.state;
+      cur.username = avatar.username;
+      cur.avatarColor = avatar.avatarColor;
+      cur.isAI = avatar.isAI;
+      nextRenderAvatars[avatar.id] = cur;
+    }
+    renderAvatarsRef.current = nextRenderAvatars;
+
+    render(
+      canvas,
+      world,
+      Object.values(renderAvatarsRef.current),
+      myUserId,
+      nearbyIds,
+      cameraRef.current
+    );
+
     animRef.current = requestAnimationFrame(gameLoop);
-  }, [world, avatars, myUserId, nearbyIds, onMove, onIdle]);
+  }, [avatars, cameraMode, controlMode, emitIntent, freeLook, getMyAvatar, myUserId, nearbyIds, world]);
 
   useEffect(() => {
     animRef.current = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animRef.current);
   }, [gameLoop]);
 
-  // ── Canvas resize ──────────────────────────────────────────────────────────
   useEffect(() => {
     function resize() {
       const canvas = canvasRef.current;
@@ -140,30 +241,27 @@ export default function WorldCanvas({
       ref={canvasRef}
       style={styles.canvas}
       tabIndex={0}
-      aria-label="Virtual workspace — use arrow keys or WASD to move"
+      aria-label="Virtual workspace — drag to steer, T tap mode, G grid mode"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onContextMenu={(e) => e.preventDefault()}
     />
   );
 }
 
-// ── Renderer ─────────────────────────────────────────────────────────────────
-
 function render(canvas, world, avatars, myUserId, nearbyIds, camera) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
   ctx.save();
   ctx.translate(-camera.x, -camera.y);
 
-  // Background
   ctx.fillStyle = '#2c2c3e';
   ctx.fillRect(0, 0, world.bounds.width, world.bounds.height);
 
-  // Rooms
-  for (const room of world.rooms) {
-    drawRoom(ctx, room);
-  }
+  for (const room of world.rooms) drawRoom(ctx, room);
 
-  // Proximity circle around my avatar
   const me = avatars.find((a) => a.id === myUserId);
   if (me) {
     ctx.save();
@@ -177,45 +275,29 @@ function render(canvas, world, avatars, myUserId, nearbyIds, camera) {
     ctx.restore();
   }
 
-  // Avatars
   for (const avatar of avatars) {
-    const isMe = avatar.id === myUserId;
-    const isNearby = nearbyIds.includes(avatar.id);
-    drawAvatar(ctx, avatar, isMe, isNearby);
+    drawAvatar(ctx, avatar, avatar.id === myUserId, nearbyIds.includes(avatar.id));
   }
-
   ctx.restore();
 }
 
 function drawRoom(ctx, room) {
   const { bounds, color, name, type } = room;
-
-  // Room fill
   ctx.fillStyle = color || '#f5f5f5';
   ctx.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
-
-  // Room border
   ctx.strokeStyle = 'rgba(0,0,0,0.15)';
   ctx.lineWidth = 2;
   ctx.strokeRect(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2);
-
-  // Room label
   const icon = ROOM_ICONS[type] || '📍';
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.font = `bold ${ROOM_LABEL_FONT}`;
   ctx.textAlign = 'center';
-  ctx.fillText(
-    `${icon} ${name}`,
-    bounds.x + bounds.width / 2,
-    bounds.y + 22
-  );
+  ctx.fillText(`${icon} ${name}`, bounds.x + bounds.width / 2, bounds.y + 22);
 }
 
 function drawAvatar(ctx, avatar, isMe, isNearby) {
   const { x, y, username, avatarColor, state, isAI } = avatar;
   const r = AVATAR_RADIUS;
-
-  // Glow for nearby / self
   if (isNearby || isMe) {
     ctx.save();
     ctx.beginPath();
@@ -225,38 +307,28 @@ function drawAvatar(ctx, avatar, isMe, isNearby) {
     ctx.restore();
   }
 
-  // Avatar body
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = avatarColor || '#3498db';
   ctx.fill();
-
-  // Border
   ctx.strokeStyle = isMe ? '#fff' : 'rgba(255,255,255,0.5)';
   ctx.lineWidth = isMe ? 3 : 1.5;
   ctx.stroke();
 
-  // State indicator (walking = subtle pulse dot)
-  if (state === 'walking') {
-    ctx.beginPath();
-    ctx.arc(x + r * 0.6, y - r * 0.6, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#2ecc71';
-    ctx.fill();
-  } else if (state === 'busy') {
-    ctx.beginPath();
-    ctx.arc(x + r * 0.6, y - r * 0.6, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#e74c3c';
-    ctx.fill();
+  if (state === 'moving') {
+    drawStateDot(ctx, x, y, r, '#2ecc71');
+  } else if (state === 'speaking') {
+    drawStateDot(ctx, x, y, r, '#f39c12');
+  } else if (state === 'interacting') {
+    drawStateDot(ctx, x, y, r, '#9b59b6');
   }
 
-  // AI badge
   if (isAI) {
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
     ctx.fillText('🤖', x, y + 4);
   } else {
-    // Initials
     const initials = (username || '?').charAt(0).toUpperCase();
     ctx.font = `bold ${r}px sans-serif`;
     ctx.textAlign = 'center';
@@ -266,11 +338,25 @@ function drawAvatar(ctx, avatar, isMe, isNearby) {
     ctx.textBaseline = 'alphabetic';
   }
 
-  // Name label below avatar
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = isMe ? '#fff' : 'rgba(255,255,255,0.8)';
   ctx.fillText(username || 'Unknown', x, y + r + 14);
+}
+
+function drawStateDot(ctx, x, y, r, color) {
+  ctx.beginPath();
+  ctx.arc(x + r * 0.6, y - r * 0.6, 4, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
 }
 
 const styles = {
@@ -279,5 +365,6 @@ const styles = {
     display: 'block',
     cursor: 'crosshair',
     outline: 'none',
+    touchAction: 'none',
   },
 };

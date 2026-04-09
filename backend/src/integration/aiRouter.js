@@ -49,8 +49,11 @@ function setIO(io) {
  *
  * Command types:
  *   MOVE      – { x, y, z? }
- *   SET_STATE – { state: 'idle'|'busy'|'walking' }
+ *   SET_STATE – { state: 'idle'|'moving'|'interacting'|'speaking' }
  *   TELEPORT  – { roomId }
+ *   MOVE_TO_USER – { targetUserId, step? }
+ *   PATROL_ROOM  – { roomId }
+ *   GREET_ON_APPROACH – { durationMs? }
  */
 router.post('/command', (req, res) => {
   const { userId, command } = req.body || {};

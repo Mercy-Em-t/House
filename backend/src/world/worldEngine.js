@@ -161,6 +161,44 @@ class WorldEngine {
   }
 
   /**
+   * Clamp with avatar radius and provide collision information.
+   *
+   * @param {{ x: number, y: number }} current
+   * @param {{ x: number, y: number }} next
+   * @param {{ radius?: number }} [opts]
+   * @returns {{ x: number, y: number, collided: boolean }}
+   */
+  resolveMovement(current, next, opts = {}) {
+    const radius = Math.max(0, Number(opts.radius) || 0);
+    const minX = radius;
+    const minY = radius;
+    const maxX = this.bounds.width - radius;
+    const maxY = this.bounds.height - radius;
+
+    const clampedX = Math.max(minX, Math.min(maxX, next.x));
+    const clampedY = Math.max(minY, Math.min(maxY, next.y));
+    const collided = clampedX !== next.x || clampedY !== next.y;
+
+    // brief slide correction: only keep one-axis progress when edge-colliding
+    if (collided) {
+      const slideX = Math.max(minX, Math.min(maxX, next.x));
+      const slideY = Math.max(minY, Math.min(maxY, current.y));
+      const xOnlyDelta = Math.abs(slideX - current.x) + Math.abs(slideY - current.y);
+
+      const slide2X = Math.max(minX, Math.min(maxX, current.x));
+      const slide2Y = Math.max(minY, Math.min(maxY, next.y));
+      const yOnlyDelta = Math.abs(slide2X - current.x) + Math.abs(slide2Y - current.y);
+
+      if (xOnlyDelta > yOnlyDelta) {
+        return { x: slideX, y: slideY, collided: true };
+      }
+      return { x: slide2X, y: slide2Y, collided: true };
+    }
+
+    return { x: clampedX, y: clampedY, collided: false };
+  }
+
+  /**
    * Return all avatars within `proximityRadius` world units of (x, y),
    * excluding the requester's own id.
    *
@@ -177,6 +215,40 @@ class WorldEngine {
       const dy = a.y - pos.y;
       return Math.sqrt(dx * dx + dy * dy) <= radius;
     });
+  }
+
+  /**
+   * Proximity IDs with hysteresis to avoid flicker near threshold edges.
+   *
+   * @param {{ x:number, y:number }} pos
+   * @param {string} excludeId
+   * @param {Array<{id:string,x:number,y:number}>} allAvatars
+   * @param {string[]} previousIds
+   * @param {number} [enterRadius]
+   * @param {number} [exitRadius]
+   * @returns {string[]}
+   */
+  getNearbyAvatarIdsWithHysteresis(
+    pos,
+    excludeId,
+    allAvatars,
+    previousIds = [],
+    enterRadius = config.world.proximityRadius,
+    exitRadius = config.world.proximityRadius + config.world.proximityHysteresis
+  ) {
+    const prevSet = new Set(previousIds);
+    const next = [];
+
+    for (const avatar of allAvatars) {
+      if (avatar.id === excludeId) continue;
+      const dx = avatar.x - pos.x;
+      const dy = avatar.y - pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const limit = prevSet.has(avatar.id) ? exitRadius : enterRadius;
+      if (dist <= limit) next.push(avatar.id);
+    }
+
+    return next;
   }
 
   /** Serialise to a plain object suitable for sending to clients. */

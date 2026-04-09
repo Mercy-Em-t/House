@@ -31,6 +31,17 @@ const config = {
 
     // Proximity radius (world units) for voice/chat activation
     proximityRadius: 120,
+    proximityHysteresis: 16,
+
+    // Authoritative simulation tick (Hz)
+    tickRate: 20,
+
+    movement: {
+      defaultSpeed: 220, // world units / second
+      maxSpeed: 380,
+      gridStep: 40,
+      collisionSlideTicks: 5,
+    },
   },
 };
 

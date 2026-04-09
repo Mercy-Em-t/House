@@ -185,7 +185,10 @@ curl -X POST http://localhost:4000/api/ai/message \
 |---|---|---|
 | `MOVE` | `{ x, y, z? }` | Move avatar to coordinates |
 | `TELEPORT` | `{ roomId }` | Instantly jump to a room's spawn point |
-| `SET_STATE` | `{ state: 'idle'\|'busy'\|'walking' }` | Change avatar status |
+| `SET_STATE` | `{ state: 'idle'\|'moving'\|'interacting'\|'speaking' }` | Change avatar status |
+| `MOVE_TO_USER` | `{ targetUserId, step? }` | Move AI avatar toward a user |
+| `PATROL_ROOM` | `{ roomId }` | Move AI avatar to a random room point |
+| `GREET_ON_APPROACH` | `{ durationMs? }` | Set temporary interaction state |
 
 ---
 
@@ -244,8 +247,9 @@ cd backend && npm test
 
 | Event | Payload | Description |
 |---|---|---|
-| `avatar:move` | `{ x, y, z?, direction? }` | Move avatar |
+| `avatar:intent` | `{ mode, active, direction?, speed?, target?, sequence, clientTime }` | Send movement intent for server simulation |
 | `avatar:idle` | — | Stop moving |
+| `room:join` | `{ roomId }` | Explicitly join room channel |
 | `chat:send` | `{ content, type?, recipientId? }` | Send message |
 | `room:history` | `{ roomId }` | Request room chat history |
 
@@ -256,8 +260,8 @@ cd backend && npm test
 | `world:init` | `{ world, avatars, myUserId }` | Full world state on connect |
 | `avatar:joined` | Avatar object | New avatar entered |
 | `avatar:update` | Avatar object | Position/state changed |
+| `world:snapshot` | `{ serverTime, avatars }` | Fixed-tick authoritative snapshot |
 | `avatar:left` | `{ userId }` | Avatar disconnected |
 | `chat:message` | Message object | New chat message |
 | `chat:history` | `{ roomId, messages }` | Historical messages |
 | `proximity:update` | `{ nearby: string[] }` | Nearby avatar IDs changed |
-

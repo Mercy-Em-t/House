@@ -114,7 +114,7 @@ describe('AvatarManager', () => {
     assert.equal(avatar.x, 300);
     assert.equal(avatar.y, 350);
     assert.equal(avatar.roomId, 'open-office');
-    assert.equal(avatar.state, 'walking');
+    assert.equal(avatar.state, 'moving');
   });
 
   it('sets avatar to idle', () => {
@@ -135,10 +135,10 @@ describe('AvatarManager', () => {
   it('applies SET_STATE command', () => {
     const avatar = avatarManager.applyCommand('user-1', {
       type: 'SET_STATE',
-      payload: { state: 'busy' },
+      payload: { state: 'interacting' },
     });
     assert.ok(avatar);
-    assert.equal(avatar.state, 'busy');
+    assert.equal(avatar.state, 'interacting');
   });
 
   it('returns null for command on nonexistent avatar', () => {

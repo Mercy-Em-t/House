@@ -19,6 +19,7 @@ export default function HUD({
   nearbyCount,
   chatMode,
   onChatModeChange,
+  onJoinRoom,
   onLogout,
   connected,
 }) {
@@ -58,7 +59,10 @@ export default function HUD({
       <div style={styles.right}>
         <Stat icon="🟢" label={`${onlineCount} online`} />
         <Stat icon="📡" label={`${nearbyCount} nearby`} />
-        <div style={styles.controls}>⌨️ WASD / ↑↓←→</div>
+        <div style={styles.controls}>🕹️ Drag steer • 1/2/3 modes • F free-look</div>
+        <button style={styles.joinBtn} onClick={onJoinRoom} disabled={!currentRoom}>
+          Join Room
+        </button>
         <div style={styles.statusDot(connected)} title={connected ? 'Connected' : 'Disconnected'} />
         <span style={styles.userName}>👤 {user.username}</span>
         <button style={styles.logoutBtn} onClick={onLogout}>
@@ -173,6 +177,15 @@ const styles = {
     border: '1px solid rgba(255,255,255,0.15)',
     background: 'transparent',
     color: '#888',
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+  joinBtn: {
+    padding: '4px 10px',
+    borderRadius: 6,
+    border: '1px solid rgba(52,152,219,0.45)',
+    background: 'rgba(52,152,219,0.15)',
+    color: '#9bd4ff',
     fontSize: 12,
     cursor: 'pointer',
   },
