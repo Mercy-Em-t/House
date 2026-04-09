@@ -13,7 +13,7 @@
 const config = require('../config');
 const worldEngine = require('../world/worldEngine');
 
-/** @typedef {{ id: string, userId: string, username: string, avatarColor: string, x: number, y: number, z: number, direction: string, state: string, roomId: string|null, isAI: boolean, collisionTicks?: number, stateUntil?: number|null }} Avatar */
+/** @typedef {{ id: string, userId: string, username: string, avatarColor: string, x: number, y: number, z: number, direction: string, state: string, roomId: string|null, isAI: boolean, connectedAt: string, collisionTicks?: number, stateUntil?: number|null }} Avatar */
 
 class AvatarManager {
   constructor() {
