@@ -8,6 +8,11 @@
 
 const config = {
   port: process.env.PORT || 4000,
+  runtime: {
+    mode: process.env.RUNTIME_MODE || 'node',
+    realtimeBaseUrl: process.env.REALTIME_BASE_URL || 'http://localhost:4100',
+    bridgeKey: process.env.REALTIME_BRIDGE_KEY || 'house-bridge-dev-key',
+  },
 
   jwt: {
     secret: process.env.JWT_SECRET || 'house-dev-secret-change-in-production',

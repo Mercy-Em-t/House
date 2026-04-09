@@ -1,0 +1,52 @@
+{
+  "version": "house-protocol-v1",
+  "events": {
+    "client_to_server": [
+      "avatar:intent",
+      "avatar:idle",
+      "room:join",
+      "chat:send",
+      "room:history"
+    ],
+    "server_to_client": [
+      "world:init",
+      "avatar:joined",
+      "avatar:update",
+      "world:snapshot",
+      "avatar:left",
+      "chat:message",
+      "chat:history",
+      "proximity:update"
+    ]
+  },
+  "types": {
+    "avatar": {
+      "id": "string",
+      "userId": "string",
+      "username": "string",
+      "avatarColor": "string",
+      "x": "number",
+      "y": "number",
+      "z": "number",
+      "roomId": "string|null",
+      "state": "idle|moving|interacting|speaking"
+    },
+    "intent": {
+      "mode": "steer|tap|grid",
+      "active": "boolean",
+      "direction": "{x:number,y:number}|null",
+      "speed": "number",
+      "target": "{x:number,y:number}|null",
+      "sequence": "number",
+      "clientTime": "number"
+    },
+    "worldSnapshot": {
+      "serverTime": "number",
+      "avatars": "Avatar[]"
+    },
+    "error": {
+      "error": "string",
+      "code": "string|undefined"
+    }
+  }
+}

@@ -16,6 +16,7 @@ const { router: authRouter } = require('./auth/authRouter');
 const worldRouter = require('./world/worldRouter');
 const { router: aiRouter, setIO } = require('./integration/aiRouter');
 const { registerSocketHandlers } = require('./socket/socketHandler');
+const { PROTOCOL_VERSION } = require('../../shared/protocol');
 
 // ── Express app ───────────────────────────────────────────────────────────────
 const app = express();
@@ -43,7 +44,14 @@ const apiLimiter = rateLimit({
 });
 
 // Health-check endpoint (useful for load balancers / monitoring)
-app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.get('/health', (_req, res) =>
+  res.json({
+    status: 'ok',
+    mode: config.runtime.mode,
+    protocolVersion: PROTOCOL_VERSION,
+    timestamp: new Date().toISOString(),
+  })
+);
 
 // API routes
 app.use('/api/auth', authLimiter, authRouter);

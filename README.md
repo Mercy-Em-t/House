@@ -38,6 +38,14 @@ House/
 │       ├── integration/        # AI agent REST API
 │       └── socket/             # Socket.io real-time handlers
 │
+├── realtime-rs/          # Rust real-time runtime (production/hybrid mode)
+│   └── src/
+│       └── main.rs             # WebSocket + tick loop + bridge endpoints
+│
+├── shared/               # Shared protocol contracts for Node/Rust clients
+│   └── protocol/
+│       └── v1.json
+│
 └── frontend/             # React + HTML5 Canvas web app
     └── src/
         ├── App.jsx             # Root component (auth gate)
@@ -81,6 +89,14 @@ npm start
 
 The server runs on **http://localhost:4000**.
 
+### Runtime modes
+
+Backend mode is controlled by `RUNTIME_MODE`:
+
+- `node` (default): current Node realtime flow
+- `hybrid`: Node API/auth + Rust realtime bridge
+- `rust`: Node orchestration with Rust-first realtime routing
+
 ### 3 — Start the frontend
 
 ```bash
@@ -95,6 +111,15 @@ Open **http://localhost:5173** in your browser.
 * Use WASD or arrow keys to move your avatar.
 * Walk into rooms to join their chat channel.
 * Switch between Room / Nearby / Global chat modes in the top bar.
+
+### 5 — Optional: start Rust realtime service
+
+```bash
+cd realtime-rs
+cargo run
+```
+
+The Rust realtime service runs on **http://localhost:4100** by default.
 
 ---
 
@@ -199,6 +224,9 @@ curl -X POST http://localhost:4000/api/ai/message \
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `4000` | HTTP server port |
+| `RUNTIME_MODE` | `node` | Runtime mode (`node`, `hybrid`, `rust`) |
+| `REALTIME_BASE_URL` | `http://localhost:4100` | Rust realtime bridge URL |
+| `REALTIME_BRIDGE_KEY` | `house-bridge-dev-key` | Bridge auth key Node → Rust |
 | `JWT_SECRET` | `house-dev-secret-change-in-production` | JWT signing secret |
 | `JWT_EXPIRES_IN` | `24h` | Token expiry |
 | `CORS_ORIGIN` | `http://localhost:5173` | Allowed frontend origin |
@@ -210,6 +238,11 @@ curl -X POST http://localhost:4000/api/ai/message \
 |---|---|---|
 | `VITE_API_URL` | `` (empty, proxied) | Backend API base URL |
 | `VITE_SOCKET_URL` | `` (empty, proxied) | Socket.io server URL |
+| `VITE_RUNTIME_MODE` | `node` | Client runtime target (`node`, `rust`, `auto`) |
+| `VITE_REALTIME_URL` | `` | Realtime URL for Rust mode |
+
+For Next.js compatibility, the same keys are supported as:
+`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SOCKET_URL`, `NEXT_PUBLIC_RUNTIME_MODE`, `NEXT_PUBLIC_REALTIME_URL`.
 
 ---
 
@@ -224,6 +257,18 @@ cd backend && npm test
 * Avatar Manager (spawn, move, commands)
 * Chat Manager (messages, history)
 * Auth API (register, login, JWT validation)
+
+Frontend build validation:
+
+```bash
+cd frontend && npm run build
+```
+
+Phase 4 quality-control assets:
+
+- `quality/qct/latency-checklist.md`
+- `quality/qct/load-k6.js`
+- `quality/qct/consistency-checklist.md`
 
 ---
 

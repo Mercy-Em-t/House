@@ -19,6 +19,7 @@ const express = require('express');
 const avatarManager = require('../avatar/avatarManager');
 const chatManager = require('../communication/chatManager');
 const worldEngine = require('../world/worldEngine');
+const realtimeOrchestrator = require('../realtime/realtimeOrchestrator');
 
 const router = express.Router();
 
@@ -55,10 +56,16 @@ function setIO(io) {
  *   PATROL_ROOM  – { roomId }
  *   GREET_ON_APPROACH – { durationMs? }
  */
-router.post('/command', (req, res) => {
+router.post('/command', async (req, res) => {
   const { userId, command } = req.body || {};
   if (!userId || !command) {
     return res.status(400).json({ error: 'userId and command are required' });
+  }
+
+  try {
+    await realtimeOrchestrator.forwardCommand({ userId, command });
+  } catch (error) {
+    return res.status(502).json({ error: `Realtime orchestration failed: ${error.message}` });
   }
 
   const avatar = avatarManager.applyCommand(userId, command);
@@ -78,10 +85,16 @@ router.post('/command', (req, res) => {
  * POST /api/ai/message
  * Body: { userId, content, type? ('room'|'global'|'proximity') }
  */
-router.post('/message', (req, res) => {
+router.post('/message', async (req, res) => {
   const { userId, content, type = 'room' } = req.body || {};
   if (!userId || !content) {
     return res.status(400).json({ error: 'userId and content are required' });
+  }
+
+  try {
+    await realtimeOrchestrator.forwardMessage({ userId, content, type });
+  } catch (error) {
+    return res.status(502).json({ error: `Realtime orchestration failed: ${error.message}` });
   }
 
   const avatar = avatarManager.get(userId);
@@ -116,10 +129,16 @@ router.post('/message', (req, res) => {
  *
  * Creates an AI-controlled avatar. userId must be unique.
  */
-router.post('/spawn-agent', (req, res) => {
+router.post('/spawn-agent', async (req, res) => {
   const { userId, username, avatarColor = '#9b59b6' } = req.body || {};
   if (!userId || !username) {
     return res.status(400).json({ error: 'userId and username are required' });
+  }
+
+  try {
+    await realtimeOrchestrator.forwardSpawn({ userId, username, avatarColor });
+  } catch (error) {
+    return res.status(502).json({ error: `Realtime orchestration failed: ${error.message}` });
   }
 
   const avatar = avatarManager.spawn({ userId, username, avatarColor, isAI: true });
@@ -134,11 +153,17 @@ router.post('/spawn-agent', (req, res) => {
 /**
  * DELETE /api/ai/despawn-agent/:id
  */
-router.delete('/despawn-agent/:id', (req, res) => {
+router.delete('/despawn-agent/:id', async (req, res) => {
   const { id } = req.params;
   const avatar = avatarManager.get(id);
   if (!avatar || !avatar.isAI) {
     return res.status(404).json({ error: 'AI avatar not found' });
+  }
+
+  try {
+    await realtimeOrchestrator.forwardDespawn({ userId: id });
+  } catch (error) {
+    return res.status(502).json({ error: `Realtime orchestration failed: ${error.message}` });
   }
 
   avatarManager.despawn(id);
