@@ -37,7 +37,10 @@ function createWSAdapter(url) {
 
   ws.addEventListener('open', () => emitLocal('connect'));
   ws.addEventListener('close', () => emitLocal('disconnect'));
-  ws.addEventListener('error', () => emitLocal('disconnect'));
+  ws.addEventListener('error', (event) => {
+    console.error('[Socket] ws transport error');
+    emitLocal('error', event);
+  });
   ws.addEventListener('message', (event) => {
     try {
       const parsed = JSON.parse(event.data);

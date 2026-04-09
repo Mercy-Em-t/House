@@ -22,7 +22,8 @@ function firstEnv(...names) {
   return '';
 }
 
-const runtimeMode = (firstEnv('VITE_RUNTIME_MODE', 'NEXT_PUBLIC_RUNTIME_MODE') || 'node').toLowerCase();
+const DEFAULT_RUNTIME_MODE = 'node';
+const runtimeMode = (firstEnv('VITE_RUNTIME_MODE', 'NEXT_PUBLIC_RUNTIME_MODE') || DEFAULT_RUNTIME_MODE).toLowerCase();
 const apiBase = firstEnv('VITE_API_URL', 'NEXT_PUBLIC_API_URL');
 const nodeSocket = firstEnv('VITE_SOCKET_URL', 'NEXT_PUBLIC_SOCKET_URL');
 const realtimeSocket = firstEnv('VITE_REALTIME_URL', 'NEXT_PUBLIC_REALTIME_URL');

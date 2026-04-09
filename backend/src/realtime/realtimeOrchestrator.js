@@ -24,7 +24,12 @@ async function forward(path, payload) {
   let data = null;
   try {
     data = await response.json();
-  } catch {
+  } catch (error) {
+    console.warn('[RealtimeOrchestrator] Non-JSON response from realtime bridge', {
+      path,
+      status: response.status,
+      error: error.message,
+    });
     data = null;
   }
 
