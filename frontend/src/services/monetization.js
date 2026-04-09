@@ -29,33 +29,6 @@ export function createPaymentIntent(provider, tokens = 100) {
   });
 }
 
-export async function simulateWebhookSettlement({ provider, intent }) {
-  const timestamp = Date.now();
-  const webhookId = `${provider}-webhook-${intent.intentId}`;
-  const payload = {
-    eventId: `${provider}-evt-${intent.intentId}`,
-    reference: intent.intentId,
-    userId: intent.userId,
-    tokens: intent.tokens,
-    currency: intent.currency,
-    amountMinor: intent.amountMinor,
-    status: 'confirmed',
-  };
-
-  // Dev helper endpoint expects a provider-signed signature; this intentionally
-  // calls without one in client flow and lets backend reject outside trusted flow.
-  // Frontend then gives user guidance to complete server-side webhook simulation.
-  return request(`/payments/webhook/${provider}`, {
-    method: 'POST',
-    headers: {
-      'x-signature': '',
-      'x-timestamp': String(timestamp),
-      'x-webhook-id': webhookId,
-    },
-    body: JSON.stringify(payload),
-  });
-}
-
 export function fetchAISubscription() {
   return request('/subscription/ai');
 }
