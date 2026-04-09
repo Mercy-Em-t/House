@@ -4,6 +4,15 @@ import WorldCanvas from './WorldCanvas.jsx';
 import ChatPanel from '../Chat/ChatPanel.jsx';
 import HUD from '../HUD/HUD.jsx';
 import ControlPanel from '../Settings/ControlPanel.jsx';
+import {
+  createPaymentIntent,
+  fetchAISubscription,
+  fetchLedger,
+  fetchRoomPolicy,
+  fetchWallet,
+  rentRoom,
+  subscribeAI,
+} from '../../services/monetization';
 
 const CONTROL_CONFIG_STORAGE_KEY = 'house_control_config_v1';
 const DEFAULT_CONTROL_CONFIG = {
@@ -38,6 +47,11 @@ export default function WorldView({ user, onLogout }) {
   const [nearbyIds, setNearbyIds] = useState([]);
   const [chatMode, setChatMode] = useState('room'); // 'room' | 'global' | 'proximity'
   const [controlPanelOpen, setControlPanelOpen] = useState(false);
+  const [tokenBalance, setTokenBalance] = useState(0);
+  const [aiSubscription, setAISubscription] = useState({ active: false, subscription: null });
+  const [rentalCountdown, setRentalCountdown] = useState(0);
+  const [recentTransactions, setRecentTransactions] = useState([]);
+  const [blockedReason, setBlockedReason] = useState('');
   const [controlConfig, setControlConfig] = useState(() => {
     try {
       const raw = localStorage.getItem(CONTROL_CONFIG_STORAGE_KEY);
@@ -139,6 +153,10 @@ export default function WorldView({ user, onLogout }) {
       setNearbyIds(nearby);
     });
 
+    socket.on('room:join-denied', ({ message }) => {
+      setBlockedReason(message || 'Room access denied');
+    });
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
@@ -150,15 +168,52 @@ export default function WorldView({ user, onLogout }) {
       socket.off('chat:message');
       socket.off('chat:history');
       socket.off('proximity:update');
+      socket.off('room:join-denied');
     };
   }, [addMessage]);
+
+  const refreshMonetization = useCallback(async () => {
+    try {
+      const [walletData, aiData, ledgerData] = await Promise.all([
+        fetchWallet(),
+        fetchAISubscription(),
+        fetchLedger(8),
+      ]);
+      setTokenBalance(walletData?.wallet?.tokenBalance || 0);
+      setAISubscription(aiData || { active: false, subscription: null });
+      setRecentTransactions(ledgerData?.entries || []);
+    } catch (error) {
+      setBlockedReason(error.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMonetization();
+  }, [refreshMonetization]);
 
   // Fetch room history when entering a new room
   const currentRoomId = currentRoom?.id ?? null;
   useEffect(() => {
     if (currentRoomId) {
       requestHistory(currentRoomId);
+      fetchRoomPolicy(currentRoomId)
+        .then((policy) => {
+          const seconds = policy?.rentalStatus?.remainingSeconds || 0;
+          setRentalCountdown(seconds);
+        })
+        .catch(() => {});
     }
+  }, [currentRoomId]);
+
+  useEffect(() => {
+    if (!currentRoomId) {
+      setRentalCountdown(0);
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      setRentalCountdown((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(timer);
   }, [currentRoomId]);
 
   function handleAvatarIntent(intent) {
@@ -180,7 +235,41 @@ export default function WorldView({ user, onLogout }) {
   }
 
   function handleJoinRoom() {
+    setBlockedReason('');
     if (currentRoom?.id) emitJoinRoom(currentRoom.id);
+  }
+
+  async function handleBuy(provider) {
+    try {
+      const result = await createPaymentIntent(provider, 100);
+      setBlockedReason(`Payment intent created via ${provider}. Complete provider checkout and webhook settlement.`);
+      setRecentTransactions((prev) => [result.intent, ...prev].slice(0, 8));
+      await refreshMonetization();
+    } catch (error) {
+      setBlockedReason(error.message);
+    }
+  }
+
+  async function handleSubscribeAI() {
+    try {
+      await subscribeAI();
+      setBlockedReason('');
+      await refreshMonetization();
+    } catch (error) {
+      setBlockedReason(error.message);
+    }
+  }
+
+  async function handleRentRoom() {
+    if (!currentRoom?.id) return;
+    try {
+      const result = await rentRoom(currentRoom.id, 60);
+      setRentalCountdown(Math.max(0, Math.ceil((Date.parse(result.endsAt) - Date.now()) / 1000)));
+      setBlockedReason('');
+      await refreshMonetization();
+    } catch (error) {
+      setBlockedReason(error.message);
+    }
   }
 
   function handleApplyControlConfig(nextConfig) {
@@ -213,10 +302,18 @@ export default function WorldView({ user, onLogout }) {
         currentRoom={currentRoom}
         onlineCount={Object.keys(avatars).length}
         nearbyCount={nearbyIds.length}
+        tokenBalance={tokenBalance}
+        aiSubscription={aiSubscription}
+        rentalCountdown={rentalCountdown}
+        blockedReason={blockedReason}
         chatMode={chatMode}
         onChatModeChange={setChatMode}
         onJoinRoom={handleJoinRoom}
         onOpenControlPanel={() => setControlPanelOpen(true)}
+        onBuyWithStripe={() => handleBuy('stripe')}
+        onBuyWithMpesa={() => handleBuy('mpesa')}
+        onSubscribeAI={handleSubscribeAI}
+        onRentRoom={handleRentRoom}
         onLogout={handleLogout}
         connected={connected}
       />
@@ -255,6 +352,17 @@ export default function WorldView({ user, onLogout }) {
         onApply={handleApplyControlConfig}
         onClose={() => setControlPanelOpen(false)}
       />
+
+      {recentTransactions.length > 0 ? (
+        <div style={styles.txPanel}>
+          <strong style={styles.txTitle}>Recent Transactions</strong>
+          {recentTransactions.slice(0, 5).map((tx, index) => (
+            <div key={tx.id || tx.intentId || `${tx.type || 'event'}-${index}`} style={styles.txRow}>
+              {tx.type || tx.provider || 'event'} • {tx.description || tx.status || 'created'}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -349,5 +457,25 @@ const styles = {
     fontSize: 13,
     pointerEvents: 'none',
     backdropFilter: 'blur(4px)',
+  },
+  txPanel: {
+    position: 'fixed',
+    right: 12,
+    bottom: 12,
+    width: 280,
+    background: 'rgba(10,14,24,0.86)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    padding: '8px 10px',
+    color: '#d9e6ff',
+    fontSize: 12,
+  },
+  txTitle: {
+    display: 'block',
+    marginBottom: 6,
+  },
+  txRow: {
+    padding: '4px 0',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
   },
 };

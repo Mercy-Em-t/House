@@ -17,10 +17,18 @@ export default function HUD({
   currentRoom,
   onlineCount,
   nearbyCount,
+  tokenBalance,
+  aiSubscription,
+  rentalCountdown,
+  blockedReason,
   chatMode,
   onChatModeChange,
   onJoinRoom,
   onOpenControlPanel,
+  onBuyWithStripe,
+  onBuyWithMpesa,
+  onSubscribeAI,
+  onRentRoom,
   onLogout,
   connected,
 }) {
@@ -60,10 +68,17 @@ export default function HUD({
       <div style={styles.right}>
         <Stat icon="🟢" label={`${onlineCount} online`} />
         <Stat icon="📡" label={`${nearbyCount} nearby`} />
+        <Stat icon="🪙" label={`${tokenBalance ?? 0} tokens`} />
+        <Stat icon="🤖" label={aiSubscription?.active ? 'AI active' : 'AI inactive'} />
+        <Stat icon="⏱️" label={rentalCountdown ? `${rentalCountdown}s rental` : 'No rental'} />
         <div style={styles.controls}>🕹️ Drag steer • 1/2/3 modes • F free-look</div>
         <button style={styles.joinBtn} onClick={onJoinRoom} disabled={!currentRoom}>
           Join Room
         </button>
+        <button style={styles.buyBtn} onClick={onBuyWithStripe}>Buy (Stripe)</button>
+        <button style={styles.buyBtn} onClick={onBuyWithMpesa}>Buy (M-Pesa)</button>
+        <button style={styles.buyBtn} onClick={onSubscribeAI}>AI Plan</button>
+        <button style={styles.buyBtn} onClick={onRentRoom} disabled={!currentRoom}>Rent</button>
         <button style={styles.settingsBtn} onClick={onOpenControlPanel}>
           ⚙️ Controls
         </button>
@@ -73,6 +88,7 @@ export default function HUD({
           Sign out
         </button>
       </div>
+      {blockedReason ? <div style={styles.blocked}>{blockedReason}</div> : null}
     </header>
   );
 }
@@ -88,6 +104,7 @@ function Stat({ icon, label }) {
 
 const styles = {
   hud: {
+    position: 'relative',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -201,5 +218,25 @@ const styles = {
     color: '#f7dd83',
     fontSize: 12,
     cursor: 'pointer',
+  },
+  buyBtn: {
+    padding: '4px 8px',
+    borderRadius: 6,
+    border: '1px solid rgba(46, 204, 113, 0.45)',
+    background: 'rgba(46, 204, 113, 0.12)',
+    color: '#9ff0c0',
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+  blocked: {
+    position: 'absolute',
+    left: 16,
+    top: 54,
+    color: '#ff9d9d',
+    fontSize: 12,
+    background: 'rgba(128,0,0,0.2)',
+    border: '1px solid rgba(255,120,120,0.4)',
+    borderRadius: 6,
+    padding: '3px 8px',
   },
 };

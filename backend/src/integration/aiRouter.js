@@ -20,6 +20,7 @@ const avatarManager = require('../avatar/avatarManager');
 const chatManager = require('../communication/chatManager');
 const worldEngine = require('../world/worldEngine');
 const realtimeOrchestrator = require('../realtime/realtimeOrchestrator');
+const monetizationService = require('../monetization/monetizationService');
 
 const router = express.Router();
 
@@ -62,6 +63,21 @@ router.post('/command', async (req, res) => {
     return res.status(400).json({ error: 'userId and command are required' });
   }
 
+  const billingUserId = req.headers['x-billing-user-id'] || req.body?.billingUserId;
+  if (!billingUserId || typeof billingUserId !== 'string') {
+    return res.status(400).json({ error: 'billingUserId (or X-Billing-User-Id header) is required' });
+  }
+  monetizationService.ensureUserAccount({ userId: billingUserId, username: billingUserId });
+  const billing = monetizationService.chargeAIAction({
+    userId: billingUserId,
+    businessId: req.body?.businessId || 'platform',
+    actionType: command.type || 'command',
+    tokenCost: Number(req.body?.tokenCost) || 2,
+  });
+  if (!billing.ok) {
+    return res.status(402).json({ error: billing.message, code: billing.code, details: billing });
+  }
+
   try {
     await realtimeOrchestrator.forwardCommand({ userId, command });
   } catch (error) {
@@ -78,7 +94,7 @@ router.post('/command', async (req, res) => {
     _io.emit('avatar:update', avatar);
   }
 
-  return res.json({ avatar });
+  return res.json({ avatar, billing: { wallet: billing.wallet, subscription: billing.subscription } });
 });
 
 /**
@@ -89,6 +105,21 @@ router.post('/message', async (req, res) => {
   const { userId, content, type = 'room' } = req.body || {};
   if (!userId || !content) {
     return res.status(400).json({ error: 'userId and content are required' });
+  }
+
+  const billingUserId = req.headers['x-billing-user-id'] || req.body?.billingUserId;
+  if (!billingUserId || typeof billingUserId !== 'string') {
+    return res.status(400).json({ error: 'billingUserId (or X-Billing-User-Id header) is required' });
+  }
+  monetizationService.ensureUserAccount({ userId: billingUserId, username: billingUserId });
+  const billing = monetizationService.chargeAIAction({
+    userId: billingUserId,
+    businessId: req.body?.businessId || 'platform',
+    actionType: 'message',
+    tokenCost: Number(req.body?.tokenCost) || 1,
+  });
+  if (!billing.ok) {
+    return res.status(402).json({ error: billing.message, code: billing.code, details: billing });
   }
 
   try {
@@ -120,7 +151,7 @@ router.post('/message', async (req, res) => {
     }
   }
 
-  return res.json({ message });
+  return res.json({ message, billing: { wallet: billing.wallet, subscription: billing.subscription } });
 });
 
 /**

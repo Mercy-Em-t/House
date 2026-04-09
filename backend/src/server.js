@@ -16,6 +16,13 @@ const { router: authRouter } = require('./auth/authRouter');
 const worldRouter = require('./world/worldRouter');
 const { router: aiRouter, setIO } = require('./integration/aiRouter');
 const { registerSocketHandlers } = require('./socket/socketHandler');
+const {
+  paymentsRouter,
+  tokensRouter,
+  subscriptionRouter,
+  roomRouter,
+  ledgerRouter,
+} = require('./monetization/monetizationRouter');
 const { PROTOCOL_VERSION } = require('../../shared/protocol');
 
 // ── Express app ───────────────────────────────────────────────────────────────
@@ -57,6 +64,11 @@ app.get('/health', (_req, res) =>
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/world', apiLimiter, worldRouter);
 app.use('/api/ai', apiLimiter, aiRouter);
+app.use('/api/payments', apiLimiter, paymentsRouter);
+app.use('/api/tokens', apiLimiter, tokensRouter);
+app.use('/api/subscription', apiLimiter, subscriptionRouter);
+app.use('/api/room', apiLimiter, roomRouter);
+app.use('/api/ledger', apiLimiter, ledgerRouter);
 
 // Generic 404 handler
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

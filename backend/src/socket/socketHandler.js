@@ -10,6 +10,7 @@ const config = require('../config');
 const avatarManager = require('../avatar/avatarManager');
 const chatManager = require('../communication/chatManager');
 const worldEngine = require('../world/worldEngine');
+const monetizationService = require('../monetization/monetizationService');
 
 const socketToUser = new Map(); // socketId -> userId
 const userToSocket = new Map(); // userId -> socketId
@@ -86,6 +87,11 @@ function registerSocketHandlers(io) {
     }
 
     const userId = decoded.id;
+    monetizationService.ensureUserAccount({
+      userId,
+      username: decoded.username || decoded.email || userId,
+      email: decoded.email || null,
+    });
     socketToUser.set(socket.id, userId);
     userToSocket.set(userId, socket.id);
     movementIntentByUser.set(userId, { mode: 'steer', active: false });
@@ -146,6 +152,16 @@ function registerSocketHandlers(io) {
 
     socket.on('room:join', ({ roomId } = {}) => {
       if (!roomId || !worldEngine.getRoom(roomId)) return;
+      const access = monetizationService.canEnterRoom(userId, roomId);
+      if (!access.allow) {
+        socket.emit('room:join-denied', {
+          roomId,
+          code: access.reason || 'ACCESS_DENIED',
+          message: access.message || 'Room access denied',
+          policy: access.policy || null,
+        });
+        return;
+      }
       const target = `room:${roomId}`;
       for (const r of socket.rooms) {
         if (r.startsWith('room:') && r !== target) socket.leave(r);

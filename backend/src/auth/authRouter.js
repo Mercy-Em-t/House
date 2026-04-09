@@ -13,6 +13,7 @@ const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const config = require('../config');
 const { authenticate } = require('./authMiddleware');
+const monetizationService = require('../monetization/monetizationService');
 
 const router = express.Router();
 
@@ -65,6 +66,11 @@ router.post('/register', async (req, res) => {
   };
 
   users.set(user.id, user);
+  monetizationService.ensureUserAccount({
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+  });
 
   return res.status(201).json({
     token: signToken(user),
@@ -88,6 +94,11 @@ router.post('/login', async (req, res) => {
   if (!valid) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
+  monetizationService.ensureUserAccount({
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+  });
 
   return res.json({
     token: signToken(user),
@@ -98,6 +109,11 @@ router.post('/login', async (req, res) => {
 router.get('/me', authenticate, (req, res) => {
   const user = users.get(req.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  monetizationService.ensureUserAccount({
+    userId: user.id,
+    username: user.username,
+    email: user.email,
+  });
   return res.json({ user: publicUser(user) });
 });
 

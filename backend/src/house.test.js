@@ -13,6 +13,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const express = require('express');
+const crypto = require('node:crypto');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function post(url, body, headers = {}) {
@@ -224,6 +225,111 @@ describe('ChatManager', () => {
 });
 
 // ── HTTP API Integration Tests ────────────────────────────────────────────────
+describe('Monetization', () => {
+  const monetizationService = require('./monetization/monetizationService');
+  const paymentOrchestrator = require('./monetization/paymentOrchestrator');
+
+  it('credits tokens from confirmed webhook settlement', () => {
+    const payload = {
+      eventId: 'stripe-event-1',
+      reference: 'stripe-ref-1',
+      userId: 'mon-user-1',
+      tokens: 100,
+      currency: 'USD',
+      amountMinor: 800,
+      status: 'confirmed',
+    };
+    const timestamp = Date.now();
+    const webhookId = 'stripe-hook-1';
+    const raw = JSON.stringify(payload);
+    const signature = crypto
+      .createHmac('sha256', process.env.STRIPE_WEBHOOK_SECRET || 'stripe-webhook-dev-secret')
+      .update(`${timestamp}.${webhookId}.${raw}`)
+      .digest('hex');
+
+    const result = paymentOrchestrator.verifyAndApplyWebhook({
+      provider: 'stripe',
+      payload,
+      signature,
+      timestamp,
+      webhookId,
+    });
+
+    assert.equal(result.applied, true);
+    assert.equal(result.wallet.tokenBalance >= 100, true);
+  });
+
+  it('rejects replayed webhook id', () => {
+    const payload = {
+      eventId: 'stripe-event-2',
+      reference: 'stripe-ref-2',
+      userId: 'mon-user-2',
+      tokens: 50,
+      currency: 'USD',
+      amountMinor: 400,
+      status: 'confirmed',
+    };
+    const timestamp = Date.now();
+    const webhookId = 'stripe-hook-2';
+    const raw = JSON.stringify(payload);
+    const signature = crypto
+      .createHmac('sha256', process.env.STRIPE_WEBHOOK_SECRET || 'stripe-webhook-dev-secret')
+      .update(`${timestamp}.${webhookId}.${raw}`)
+      .digest('hex');
+
+    paymentOrchestrator.verifyAndApplyWebhook({
+      provider: 'stripe',
+      payload,
+      signature,
+      timestamp,
+      webhookId,
+    });
+
+    const replay = paymentOrchestrator.verifyAndApplyWebhook({
+      provider: 'stripe',
+      payload,
+      signature,
+      timestamp,
+      webhookId,
+    });
+
+    assert.equal(replay.replay, true);
+    assert.equal(replay.applied, false);
+  });
+
+  it('enforces room rental and AI subscription checks', () => {
+    const userId = 'mon-user-3';
+    monetizationService.ensureUserAccount({ userId, username: 'Mon 3' });
+    monetizationService.creditTokensFromSettlement({
+      userId,
+      tokens: 120,
+      provider: 'stripe',
+      reference: `seed-${Date.now()}`,
+      currency: 'USD',
+      amountMinor: 960,
+    });
+
+    const before = monetizationService.canEnterRoom(userId, 'meeting-room-a');
+    assert.equal(before.allow, false);
+
+    const rent = monetizationService.rentRoom({ userId, roomId: 'meeting-room-a', durationMinutes: 60 });
+    assert.equal(rent.ok, true);
+
+    const after = monetizationService.canEnterRoom(userId, 'meeting-room-a');
+    assert.equal(after.allow, true);
+
+    const aiBefore = monetizationService.chargeAIAction({ userId, tokenCost: 2 });
+    assert.equal(aiBefore.ok, false);
+    assert.equal(aiBefore.code, 'AI_SUBSCRIPTION_REQUIRED');
+
+    const sub = monetizationService.subscribeAI({ userId, tokenCost: 10, durationDays: 1 });
+    assert.equal(sub.ok, true);
+
+    const aiAfter = monetizationService.chargeAIAction({ userId, tokenCost: 2 });
+    assert.equal(aiAfter.ok, true);
+  });
+});
+
 describe('Auth API', () => {
   let server;
   let baseUrl;
