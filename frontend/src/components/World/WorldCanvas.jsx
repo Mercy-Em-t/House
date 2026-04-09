@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import config from '../../config.js';
 
-const AVATAR_RADIUS = config.avatar.size / 2;
 const ROOM_LABEL_FONT = '13px sans-serif';
 const ROOM_ICONS = {
   lobby: '🏛️',
@@ -11,7 +10,16 @@ const ROOM_ICONS = {
   'ai-hub': '🤖',
 };
 
-export default function WorldCanvas({ world, avatars, myUserId, nearbyIds, onIntent, onIdle }) {
+export default function WorldCanvas({
+  world,
+  avatars,
+  myUserId,
+  nearbyIds,
+  onIntent,
+  onIdle,
+  movementProfile,
+  characterProfile,
+}) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
   const keysRef = useRef(new Set());
@@ -20,18 +28,27 @@ export default function WorldCanvas({ world, avatars, myUserId, nearbyIds, onInt
   const cameraRef = useRef({ x: 0, y: 0 });
   const renderAvatarsRef = useRef({});
   const seqRef = useRef(0);
-  const [controlMode, setControlMode] = useState('steer'); // steer | tap | grid
+  const [controlMode, setControlMode] = useState(movementProfile?.controller || 'steer'); // steer | tap | grid
   const [cameraMode, setCameraMode] = useState('lookAhead'); // center | lookAhead
   const [freeLook, setFreeLook] = useState(false);
 
+  useEffect(() => {
+    if (movementProfile?.controller) {
+      setControlMode(movementProfile.controller);
+    }
+  }, [movementProfile?.controller]);
+
   const emitIntent = useCallback((intent) => {
+    const speedMultiplier = Number.isFinite(Number(movementProfile?.speedMultiplier))
+      ? Number(movementProfile.speedMultiplier)
+      : 1;
     onIntent({
       sequence: ++seqRef.current,
       clientTime: Date.now(),
-      speed: config.avatar.speed * 55,
+      speed: config.avatar.speed * 55 * speedMultiplier,
       ...intent,
     });
-  }, [onIntent]);
+  }, [movementProfile?.speedMultiplier, onIntent]);
 
   const getMyAvatar = useCallback(() => avatars.find((a) => a.id === myUserId) || null, [avatars, myUserId]);
 
@@ -206,17 +223,10 @@ export default function WorldCanvas({ world, avatars, myUserId, nearbyIds, onInt
     }
     renderAvatarsRef.current = nextRenderAvatars;
 
-    render(
-      canvas,
-      world,
-      Object.values(renderAvatarsRef.current),
-      myUserId,
-      nearbyIds,
-      cameraRef.current
-    );
+    render(canvas, world, Object.values(renderAvatarsRef.current), myUserId, nearbyIds, cameraRef.current, characterProfile);
 
     animRef.current = requestAnimationFrame(gameLoop);
-  }, [avatars, cameraMode, controlMode, emitIntent, freeLook, getMyAvatar, myUserId, nearbyIds, world]);
+  }, [avatars, cameraMode, characterProfile, controlMode, emitIntent, freeLook, getMyAvatar, myUserId, nearbyIds, world]);
 
   useEffect(() => {
     animRef.current = requestAnimationFrame(gameLoop);
@@ -251,7 +261,7 @@ export default function WorldCanvas({ world, avatars, myUserId, nearbyIds, onInt
   );
 }
 
-function render(canvas, world, avatars, myUserId, nearbyIds, camera) {
+function render(canvas, world, avatars, myUserId, nearbyIds, camera, characterProfile) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.save();
@@ -276,7 +286,7 @@ function render(canvas, world, avatars, myUserId, nearbyIds, camera) {
   }
 
   for (const avatar of avatars) {
-    drawAvatar(ctx, avatar, avatar.id === myUserId, nearbyIds.includes(avatar.id));
+    drawAvatar(ctx, avatar, avatar.id === myUserId, nearbyIds.includes(avatar.id), characterProfile);
   }
   ctx.restore();
 }
@@ -295,9 +305,13 @@ function drawRoom(ctx, room) {
   ctx.fillText(`${icon} ${name}`, bounds.x + bounds.width / 2, bounds.y + 22);
 }
 
-function drawAvatar(ctx, avatar, isMe, isNearby) {
+function drawAvatar(ctx, avatar, isMe, isNearby, characterProfile) {
   const { x, y, username, avatarColor, state, isAI } = avatar;
-  const r = AVATAR_RADIUS;
+  const size = Number.isFinite(Number(characterProfile?.size))
+    ? Number(characterProfile.size)
+    : config.avatar.size;
+  const r = size / 2;
+  const shape = characterProfile?.shape === 'block' ? 'block' : 'circle';
   if (isNearby || isMe) {
     ctx.save();
     ctx.beginPath();
@@ -308,7 +322,11 @@ function drawAvatar(ctx, avatar, isMe, isNearby) {
   }
 
   ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (shape === 'block') {
+    ctx.rect(x - r, y - r, size, size);
+  } else {
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+  }
   ctx.fillStyle = avatarColor || '#3498db';
   ctx.fill();
   ctx.strokeStyle = isMe ? '#fff' : 'rgba(255,255,255,0.5)';

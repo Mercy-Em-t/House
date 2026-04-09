@@ -3,6 +3,22 @@ import { connect, disconnect, emitIntent, emitIdle, emitChat, requestHistory, em
 import WorldCanvas from './WorldCanvas.jsx';
 import ChatPanel from '../Chat/ChatPanel.jsx';
 import HUD from '../HUD/HUD.jsx';
+import ControlPanel from '../Settings/ControlPanel.jsx';
+
+const CONTROL_CONFIG_STORAGE_KEY = 'house_control_config_v1';
+const DEFAULT_CONTROL_CONFIG = {
+  movementTypes: [
+    { id: 'continuous', label: 'Continuous Directional', controller: 'steer', speedMultiplier: 1 },
+    { id: 'tap-test', label: 'Tap to Move', controller: 'tap', speedMultiplier: 1 },
+    { id: 'grid-debug', label: 'Grid Step', controller: 'grid', speedMultiplier: 1 },
+  ],
+  characterTypes: [
+    { id: 'circle-default', label: 'Circle', shape: 'circle', size: 36 },
+    { id: 'block-default', label: 'Block', shape: 'block', size: 34 },
+  ],
+  activeMovementType: 'continuous',
+  activeCharacterType: 'circle-default',
+};
 
 /**
  * WorldView
@@ -21,6 +37,16 @@ export default function WorldView({ user, onLogout }) {
   const [currentRoom, setCurrentRoom] = useState(null);
   const [nearbyIds, setNearbyIds] = useState([]);
   const [chatMode, setChatMode] = useState('room'); // 'room' | 'global' | 'proximity'
+  const [controlPanelOpen, setControlPanelOpen] = useState(false);
+  const [controlConfig, setControlConfig] = useState(() => {
+    try {
+      const raw = localStorage.getItem(CONTROL_CONFIG_STORAGE_KEY);
+      if (!raw) return DEFAULT_CONTROL_CONFIG;
+      return sanitizeControlConfig(JSON.parse(raw));
+    } catch {
+      return DEFAULT_CONTROL_CONFIG;
+    }
+  });
   const socketRef = useRef(null);
   const myIdRef = useRef(user.id);
 
@@ -157,6 +183,12 @@ export default function WorldView({ user, onLogout }) {
     if (currentRoom?.id) emitJoinRoom(currentRoom.id);
   }
 
+  function handleApplyControlConfig(nextConfig) {
+    const safe = sanitizeControlConfig(nextConfig);
+    setControlConfig(safe);
+    localStorage.setItem(CONTROL_CONFIG_STORAGE_KEY, JSON.stringify(safe));
+  }
+
   if (!connected || !world) {
     return (
       <div style={styles.connecting}>
@@ -169,7 +201,10 @@ export default function WorldView({ user, onLogout }) {
     );
   }
 
-  const myAvatar = avatars[myIdRef.current];
+  const movementProfile = controlConfig.movementTypes.find((m) => m.id === controlConfig.activeMovementType)
+    || controlConfig.movementTypes[0];
+  const characterProfile = controlConfig.characterTypes.find((c) => c.id === controlConfig.activeCharacterType)
+    || controlConfig.characterTypes[0];
 
   return (
     <div style={styles.container}>
@@ -181,6 +216,7 @@ export default function WorldView({ user, onLogout }) {
         chatMode={chatMode}
         onChatModeChange={setChatMode}
         onJoinRoom={handleJoinRoom}
+        onOpenControlPanel={() => setControlPanelOpen(true)}
         onLogout={handleLogout}
         connected={connected}
       />
@@ -193,6 +229,8 @@ export default function WorldView({ user, onLogout }) {
           nearbyIds={nearbyIds}
           onIntent={handleAvatarIntent}
           onIdle={handleAvatarIdle}
+          movementProfile={movementProfile}
+          characterProfile={characterProfile}
         />
 
         <ChatPanel
@@ -210,8 +248,56 @@ export default function WorldView({ user, onLogout }) {
           📍 {currentRoom.name}
         </div>
       )}
+
+      <ControlPanel
+        open={controlPanelOpen}
+        config={controlConfig}
+        onApply={handleApplyControlConfig}
+        onClose={() => setControlPanelOpen(false)}
+      />
     </div>
   );
+}
+
+function sanitizeControlConfig(input) {
+  const movementTypes = Array.isArray(input?.movementTypes)
+    ? input.movementTypes
+        .filter((m) => m && typeof m.id === 'string')
+        .map((m) => ({
+          id: m.id,
+          label: typeof m.label === 'string' ? m.label : m.id,
+          controller: ['steer', 'tap', 'grid'].includes(m.controller) ? m.controller : 'steer',
+          speedMultiplier: Number.isFinite(Number(m.speedMultiplier)) ? Number(m.speedMultiplier) : 1,
+        }))
+    : [];
+
+  const characterTypes = Array.isArray(input?.characterTypes)
+    ? input.characterTypes
+        .filter((c) => c && typeof c.id === 'string')
+        .map((c) => ({
+          id: c.id,
+          label: typeof c.label === 'string' ? c.label : c.id,
+          shape: c.shape === 'block' ? 'block' : 'circle',
+          size: Number.isFinite(Number(c.size)) ? Number(c.size) : 36,
+        }))
+    : [];
+
+  const safeMovementTypes = movementTypes.length > 0 ? movementTypes : DEFAULT_CONTROL_CONFIG.movementTypes;
+  const safeCharacterTypes = characterTypes.length > 0 ? characterTypes : DEFAULT_CONTROL_CONFIG.characterTypes;
+
+  const safeActiveMovement = safeMovementTypes.some((m) => m.id === input?.activeMovementType)
+    ? input.activeMovementType
+    : safeMovementTypes[0].id;
+  const safeActiveCharacter = safeCharacterTypes.some((c) => c.id === input?.activeCharacterType)
+    ? input.activeCharacterType
+    : safeCharacterTypes[0].id;
+
+  return {
+    movementTypes: safeMovementTypes,
+    characterTypes: safeCharacterTypes,
+    activeMovementType: safeActiveMovement,
+    activeCharacterType: safeActiveCharacter,
+  };
 }
 
 const styles = {

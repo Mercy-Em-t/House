@@ -227,6 +227,33 @@ cd backend && npm test
 
 ---
 
+## ⚙️ Control Panel JSON (Movement + Character Types)
+
+The in-world **⚙️ Controls** panel lets you define movement and character profiles in JSON.
+
+```json
+{
+  "movementTypes": [
+    { "id": "continuous", "label": "Continuous Directional", "controller": "steer", "speedMultiplier": 1 },
+    { "id": "tap-test", "label": "Tap to Move", "controller": "tap", "speedMultiplier": 1 },
+    { "id": "grid-debug", "label": "Grid Step", "controller": "grid", "speedMultiplier": 1 }
+  ],
+  "characterTypes": [
+    { "id": "circle-default", "label": "Circle", "shape": "circle", "size": 36 },
+    { "id": "block-default", "label": "Block", "shape": "block", "size": 34 }
+  ],
+  "activeMovementType": "continuous",
+  "activeCharacterType": "circle-default"
+}
+```
+
+Notes:
+- `controller` must be `steer`, `tap`, or `grid`
+- `shape` must be `circle` or `block`
+- config is validated and persisted in browser localStorage
+
+---
+
 ## 🔮 Roadmap
 
 - [ ] Persistent storage (MongoDB / Postgres)

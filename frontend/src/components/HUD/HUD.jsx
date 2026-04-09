@@ -20,6 +20,7 @@ export default function HUD({
   chatMode,
   onChatModeChange,
   onJoinRoom,
+  onOpenControlPanel,
   onLogout,
   connected,
 }) {
@@ -62,6 +63,9 @@ export default function HUD({
         <div style={styles.controls}>🕹️ Drag steer • 1/2/3 modes • F free-look</div>
         <button style={styles.joinBtn} onClick={onJoinRoom} disabled={!currentRoom}>
           Join Room
+        </button>
+        <button style={styles.settingsBtn} onClick={onOpenControlPanel}>
+          ⚙️ Controls
         </button>
         <div style={styles.statusDot(connected)} title={connected ? 'Connected' : 'Disconnected'} />
         <span style={styles.userName}>👤 {user.username}</span>
@@ -186,6 +190,15 @@ const styles = {
     border: '1px solid rgba(52,152,219,0.45)',
     background: 'rgba(52,152,219,0.15)',
     color: '#9bd4ff',
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+  settingsBtn: {
+    padding: '4px 10px',
+    borderRadius: 6,
+    border: '1px solid rgba(241,196,15,0.45)',
+    background: 'rgba(241,196,15,0.12)',
+    color: '#f7dd83',
     fontSize: 12,
     cursor: 'pointer',
   },
